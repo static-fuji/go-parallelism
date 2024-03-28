@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 )
@@ -30,5 +32,17 @@ func main() {
 		}
 		// バイト型スライスを文字列型に変換してファイルの内容を出力
 		fmt.Println(string(buf[:n]))
+
+		// SHA256でハッシュ化
+		b := getBinaryBySHA256(string(buf[:n]))
+		fmt.Println(b)
+
+		//HEXダンプして出力
+		fmt.Println(hex.EncodeToString(b))
 	}
+}
+
+func getBinaryBySHA256(s string) []byte {
+	r := sha256.Sum256([]byte(s))
+	return r[:]
 }
