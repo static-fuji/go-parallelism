@@ -1,48 +1,61 @@
 package main
 
 import (
+	"bufio"
 	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"os"
+	"sync"
 )
 
 func main() {
-	fmt.Println("ファイル読み取り処理を開始します")
-	// fileを開く
-	f, err := os.Open("test.txt")
-	// 読み取り時の例外処理
+	// ファイル名を指定
+	filename := "example.txt"
+
+	// ファイルをオープン
+	file, err := os.Open(filename)
 	if err != nil {
-		fmt.Println("error")
+		fmt.Println("ファイルをオープンできませんでした:", err)
+		return
 	}
-	// close
-	defer f.Close()
+	defer file.Close()
 
-	// byte型スライスの作成
-	buf := make([]byte, 1024)
-	for {
-		// nはバイト数を示す
-		n, err := f.Read(buf)
-		// バイト数が0になることは、読み取り終了を示す
-		if n == 0 {
-			break
-		}
-		if err != nil {
-			break
-		}
-		// バイト型スライスを文字列型に変換してファイルの内容を出力
-		fmt.Println(string(buf[:n]))
+	// ファイルからScannerを作成
+	scanner := bufio.NewScanner(file)
 
-		// SHA256でハッシュ化
-		b := getBinaryBySHA256(string(buf[:n]))
-		fmt.Println(b)
+	// ワーカーゴルーチンの数を定義
+	numWorkers := 5
 
-		//HEXダンプして出力
-		fmt.Println(hex.EncodeToString(b))
+	// チャネルを作成してワーカーゴルーチンとメインゴルーチンが情報を共有する
+	lines := make(chan string)
+	var wg sync.WaitGroup
+
+	// ワーカーゴルーチンを起動
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for line := range lines {
+				hash := sha256.Sum256([]byte(line))
+				fmt.Printf("'%s' のSHA256ハッシュ: %x\n", line, hash)
+			}
+		}()
 	}
-}
 
-func getBinaryBySHA256(s string) []byte {
-	r := sha256.Sum256([]byte(s))
-	return r[:]
+	// ファイルから一行ずつ読み込んでチャネルに送信
+	for scanner.Scan() {
+		line := scanner.Text()
+		lines <- line
+	}
+
+	// チャネルを閉じてゴルーチンが終了するようにする
+	close(lines)
+
+	// 全てのワーカーゴルーチンが終了するのを待つ
+	wg.Wait()
+
+	// エラーのチェック
+	if err := scanner.Err(); err != nil {
+		fmt.Println("ファイルの読み込み中にエラーが発生しました:", err)
+	}
 }
