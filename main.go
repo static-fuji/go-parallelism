@@ -4,11 +4,16 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"sync"
+	"time"
 )
 
 func main() {
 	// ファイル名を指定
 	filename := "test.txt"
+
+	// マップを作成
+	lineMap := make(map[int]string)
 
 	// ファイルをオープン
 	file, err := os.Open(filename)
@@ -21,9 +26,6 @@ func main() {
 	// ファイルからScannerを作成
 	scanner := bufio.NewScanner(file)
 
-	// マップを作成して行を格納
-	ch := make(chan map[int]string)
-	lineMap := make(map[int]string)
 	lineNumber := 1
 
 	for scanner.Scan() {
@@ -32,19 +34,55 @@ func main() {
 		lineNumber++
 	}
 
-	// エラーのチェック
-	if err := scanner.Err(); err != nil {
-		fmt.Println("ファイルの読み込み中にエラーが発生しました:", err)
-		return
+	// チャネルを作成
+	ch := make(chan struct {
+		key   int
+		value string
+	}, lineNumber)
+
+	results := make(chan struct {
+		worker   int
+		newkey   int
+		newvalue string
+	}, lineNumber)
+
+	// WaitGroupを作成してゴルーチンの完了を待つ
+	var wg sync.WaitGroup
+	numWorkers := 5
+
+	// マップ内のキーと値をチャネルに送信するゴルーチンを起動
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			for pair := range ch {
+				results <- struct {
+					worker   int
+					newkey   int
+					newvalue string
+				}{i, pair.key, pair.value}
+				time.Sleep(time.Second)
+			}
+		}(i)
 	}
 
-	// マップの内容を出力
-	for lineNumber, line := range lineMap {
-		go func() {
-			fmt.Println(lineNumber, line, lineMap)
-			ch <- lineMap
-		}()
-		<-ch
+	for key, value := range lineMap {
+		ch <- struct {
+			key   int
+			value string
+		}{key, value}
 	}
+
 	close(ch)
+
+	// すべてのゴルーチンが完了するのを待つ
+	go func() {
+		wg.Wait() // すべてのキーと値が送信されたらチャネルを閉じる
+		close(results)
+	}()
+
+	// チャネルからキーと値を受信して出力
+	for pair := range results {
+		fmt.Printf("worker: %d, Key: %d, Value: %s\n", pair.worker, pair.newkey, pair.newvalue)
+	}
 }
