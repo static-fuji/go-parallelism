@@ -6,22 +6,23 @@ import (
 	"os"
 	"sort"
 	"sync"
-	//"time"
 )
 
+type Item struct {
+	IntValue    int
+	StringValue string
+}
+
+type ItemList []Item
+
 func main() {
-	type Item struct {
-		IntValue    int
-		StringValue string
-	}
-
-	var ItemList []Item
-
 	// ファイル名を指定
 	filename := "test.txt"
 
 	// マップを作成
 	lineMap := make(map[int]string)
+
+	items := []Item{}
 
 	// ファイルをオープン
 	file, err := os.Open(filename)
@@ -91,26 +92,18 @@ func main() {
 
 	// チャネルからキーと値を受信して出力
 	for pair := range results {
-		fmt.Printf("worker: %d, Key: %d, Value: %s\n", pair.worker, pair.newkey, pair.newvalue)
 		item := Item{
 			IntValue:    pair.newkey,
 			StringValue: pair.newvalue,
 		}
-		ItemList = append(ItemList, item)
+		items = append(items, item)
 	}
 
-	fmt.Println(ItemList.IntValue)
-	sort.Sort(ItemList)
-}
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].IntValue < items[j].IntValue
+	})
 
-func (list ItemList) Len() int {
-	return len(list)
-}
-
-func (list ItemList) Less(i, j int) bool {
-	return list[i].IntValue < list[j].IntValue
-}
-
-func (list ItemList) Swap(i, j int) {
-	list[i], list[j] = list[j], list[i]
+	for i := range items {
+		fmt.Printf("key: %d, word: %s\n", items[i].IntValue, items[i].StringValue)
+	}
 }
