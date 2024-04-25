@@ -4,11 +4,19 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"sort"
 	"sync"
-	"time"
+	//"time"
 )
 
 func main() {
+	type Item struct {
+		IntValue    int
+		StringValue string
+	}
+
+	var ItemList []Item
+
 	// ファイル名を指定
 	filename := "test.txt"
 
@@ -61,7 +69,7 @@ func main() {
 					newkey   int
 					newvalue string
 				}{i, pair.key, pair.value}
-				time.Sleep(time.Second)
+				//time.Sleep(time.Second)
 			}
 		}(i)
 	}
@@ -84,5 +92,25 @@ func main() {
 	// チャネルからキーと値を受信して出力
 	for pair := range results {
 		fmt.Printf("worker: %d, Key: %d, Value: %s\n", pair.worker, pair.newkey, pair.newvalue)
+		item := Item{
+			IntValue:    pair.newkey,
+			StringValue: pair.newvalue,
+		}
+		ItemList = append(ItemList, item)
 	}
+
+	fmt.Println(ItemList.IntValue)
+	sort.Sort(ItemList)
+}
+
+func (list ItemList) Len() int {
+	return len(list)
+}
+
+func (list ItemList) Less(i, j int) bool {
+	return list[i].IntValue < list[j].IntValue
+}
+
+func (list ItemList) Swap(i, j int) {
+	list[i], list[j] = list[j], list[i]
 }
