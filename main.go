@@ -2,27 +2,45 @@ package main
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"sort"
 	"sync"
 )
 
-type Item struct {
+type sorted struct {
 	IntValue    int
 	StringValue string
 }
 
-type ItemList []Item
+type ItemList []sorted
 
 func main() {
 	// ファイル名を指定
 	filename := "test.txt"
 
-	// マップを作成
+	// 文字列と対応する行数（key）でマップを作成
 	lineMap := make(map[int]string)
 
-	items := []Item{}
+	//作成するゴルーチン（グリーンスレッド）の数（=ファイルの行の総数）
+	numWorkers := 0
+
+	// 読み取った行と行数を受け取るチャネル
+	lines := make(chan struct {
+		lineNum int
+		line    string
+	})
+
+	//ゴルーチンから結果を受け取るチャネル
+	results := make(chan struct {
+		rLineNum int
+		hash     string
+	})
+
+	//ソートを行うためのスライス
+	sortedLists := []sorted{}
 
 	// ファイルをオープン
 	file, err := os.Open(filename)
@@ -35,75 +53,68 @@ func main() {
 	// ファイルからScannerを作成
 	scanner := bufio.NewScanner(file)
 
-	lineNumber := 1
-
+	//読み取った文字列と対応する行数をmapに代入，行の総数をカウント
 	for scanner.Scan() {
+		numWorkers++
 		line := scanner.Text()
-		lineMap[lineNumber] = line
-		lineNumber++
+		lineMap[numWorkers] = line
 	}
 
-	// チャネルを作成
-	ch := make(chan struct {
-		key   int
-		value string
-	}, lineNumber)
-
-	results := make(chan struct {
-		worker   int
-		newkey   int
-		newvalue string
-	}, lineNumber)
-
-	// WaitGroupを作成してゴルーチンの完了を待つ
+	// WaitGroupを作成
 	var wg sync.WaitGroup
-	numWorkers := 5
 
-	// マップ内のキーと値をチャネルに送信するゴルーチンを起動
+	// 行数分のゴルーチンを起動
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
-		go func(i int) {
+		go func() {
 			defer wg.Done()
-			for pair := range ch {
+			for j := range lines {
+				//ハッシュ化してhexダンプする
+				hash := sha256.Sum256([]byte(j.line))
+				hashHex := hex.EncodeToString(hash[:])
+				//resultsチャネルに結果を送信
 				results <- struct {
-					worker   int
-					newkey   int
-					newvalue string
-				}{i, pair.key, pair.value}
-				//time.Sleep(time.Second)
+					rLineNum int
+					hash     string
+				}{j.lineNum, hashHex}
 			}
-		}(i)
+		}()
 	}
 
-	for key, value := range lineMap {
-		ch <- struct {
-			key   int
-			value string
-		}{key, value}
+	//チャネルに読み込んだデータのmapを送信
+	for lineNum, line := range lineMap {
+		lines <- struct {
+			lineNum int
+			line    string
+		}{lineNum, line}
 	}
 
-	close(ch)
+	//チャネルを閉じる
+	close(lines)
 
 	// すべてのゴルーチンが完了するのを待つ
 	go func() {
-		wg.Wait() // すべてのキーと値が送信されたらチャネルを閉じる
+		wg.Wait()
+		// すべてのキーと値が送信されたらチャネルを閉じる
 		close(results)
 	}()
 
-	// チャネルからキーと値を受信して出力
-	for pair := range results {
-		item := Item{
-			IntValue:    pair.newkey,
-			StringValue: pair.newvalue,
+	//ソート用スライスにハッシュ化済みのデータを格納
+	for i := range results {
+		item := sorted{
+			IntValue:    i.rLineNum,
+			StringValue: i.hash,
 		}
-		items = append(items, item)
+		sortedLists = append(sortedLists, item)
 	}
 
-	sort.Slice(items, func(i, j int) bool {
-		return items[i].IntValue < items[j].IntValue
+	//keyの順番にソート
+	sort.Slice(sortedLists, func(i, j int) bool {
+		return sortedLists[i].IntValue < sortedLists[j].IntValue
 	})
 
-	for i := range items {
-		fmt.Printf("key: %d, word: %s\n", items[i].IntValue, items[i].StringValue)
+	//ターミナルに表示
+	for i := range sortedLists {
+		fmt.Printf("key: %d, word: %s\n", sortedLists[i].IntValue, sortedLists[i].StringValue)
 	}
 }
