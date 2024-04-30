@@ -10,11 +10,14 @@ import (
 	"sync"
 )
 
+// ソートを行うための構造体 (行数，元のテキスト，ハッシュ化済みのテキスト)
 type sorted struct {
-	IntValue    int
-	StringValue string
+	lineNum int
+	line    string
+	hashHex string
 }
 
+// ソートを行うためのスライス
 type ItemList []sorted
 
 func main() {
@@ -27,16 +30,17 @@ func main() {
 	//作成するゴルーチン（グリーンスレッド）の数（=ファイルの行の総数）
 	numWorkers := 0
 
-	// 読み取った行と行数を受け取るチャネル
+	// 読み取った行と行数を受け取るチャネル (行数，読み込んだテキスト)
 	lines := make(chan struct {
 		lineNum int
 		line    string
 	})
 
-	//ゴルーチンから結果を受け取るチャネル
+	//ゴルーチンから結果を受け取るチャネル (行数，元のテキスト，ハッシュ化済みのテキスト)
 	results := make(chan struct {
-		rLineNum int
-		hash     string
+		LineNum int
+		line    string
+		hash    string
 	})
 
 	//ソートを行うためのスライス
@@ -74,9 +78,10 @@ func main() {
 				hashHex := hex.EncodeToString(hash[:])
 				//resultsチャネルに結果を送信
 				results <- struct {
-					rLineNum int
-					hash     string
-				}{j.lineNum, hashHex}
+					LineNum int
+					line    string
+					hash    string
+				}{j.lineNum, j.line, hashHex}
 			}
 		}()
 	}
@@ -102,19 +107,20 @@ func main() {
 	//ソート用スライスにハッシュ化済みのデータを格納
 	for i := range results {
 		item := sorted{
-			IntValue:    i.rLineNum,
-			StringValue: i.hash,
+			lineNum: i.LineNum,
+			line:    i.line,
+			hashHex: i.hash,
 		}
 		sortedLists = append(sortedLists, item)
 	}
 
 	//keyの順番にソート
 	sort.Slice(sortedLists, func(i, j int) bool {
-		return sortedLists[i].IntValue < sortedLists[j].IntValue
+		return sortedLists[i].lineNum < sortedLists[j].lineNum
 	})
 
 	//ターミナルに表示
 	for i := range sortedLists {
-		fmt.Printf("key: %d, word: %s\n", sortedLists[i].IntValue, sortedLists[i].StringValue)
+		fmt.Printf("%d行目, 元のテキスト: %s , ハッシュ化: %s \n", sortedLists[i].lineNum, sortedLists[i].line, sortedLists[i].hashHex)
 	}
 }
